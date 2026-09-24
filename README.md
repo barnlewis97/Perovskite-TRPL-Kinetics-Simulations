@@ -10,9 +10,9 @@ This repository provides:
 
 - A library of ODE-based charge carrier models (`globalfit_functions.py`) compiled with JAX JIT for fast, differentiable simulation
 - Jupyter notebooks demonstrating simulation and analysis of TRPL decays for different physical regimes
-- A conda environment specification for full reproducibility
+- A pinned `requirements.txt` for reproducible installation
 
-The models are intended for fitting experimental TRPL data from semiconductor thin films (e.g. perovskites), and are compatible with probabilistic inference frameworks such as NumPyro (HMC/NUTS) or approximate Bayesian computation (ABC).
+The models are intended for fitting experimental TRPL data from semiconductor thin films (e.g. perovskites), and are compatible with probabilistic inference frameworks such as NumPyro (HMC/NUTS) or approximate Bayesian computation (ABC). The Bayesian fitting pipeline that uses these models is in the companion repository [HMC-for-Perovskite-TRPL-Kinetics](https://github.com/barnlewis97/HMC-for-Perovskite-TRPL-Kinetics).
 
 ---
 
@@ -81,14 +81,14 @@ Two-variable model (electrons + shallow trap) including radiative recombination,
 
 ## Notebooks
 
-### `ABC_Simulation.ipynb`
+### `ABC Simulation.ipynb`
 Simulates TRPL decay curves and differential transformations across a range of initial carrier densities using the ABC model. Produces:
 - TRPL decay curves (log-log) with and without background signal
 - Differential lifetime τ vs QFLS
 - Differential rate constant k vs QFLS
 - Stacked contribution plots showing relative weight of Auger, bimolecular, and trapping recombination over time
 
-### `BTD_Simulation.ipynb`
+### `BTD Simulation.ipynb`
 Simulates the full BTD model across a range of injection densities. Produces:
 - TRPL decay curves
 - Differential lifetime and rate constant vs QFLS
@@ -99,14 +99,20 @@ Simulates the full BTD model across a range of injection densities. Produces:
 
 ## Installation
 
-### Using Conda (recommended)
+Requires Python 3.11 or later.
 
 ```bash
-conda env create -f HMC_env.yml
-conda activate MCMC_env
+git clone https://github.com/barnlewis97/Perovskite-TRPL-Kinetics-Simulations.git
+cd Perovskite-TRPL-Kinetics-Simulations
+
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+jupyter notebook                 # then open either simulation notebook
 ```
 
-This installs all required packages including JAX, Diffrax, Equinox, NumPyro, ArviZ, and standard scientific Python libraries.
+`requirements.txt` pins the package versions used for the thesis simulations. For GPU acceleration, install the matching CUDA `jaxlib` wheel afterwards (see the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html)).
 
 ### Key Dependencies
 
@@ -115,12 +121,11 @@ This installs all required packages including JAX, Diffrax, Equinox, NumPyro, Ar
 | `jax` / `jaxlib` | Accelerated numerical computing with JIT compilation |
 | `diffrax` | JAX-native ODE solver (Kvaerno5 stiff solver used throughout) |
 | `equinox` | JAX neural network / filter utilities |
-| `numpyro` | Probabilistic programming and HMC/NUTS sampling |
-| `arviz` | Bayesian inference diagnostics and visualisation |
-| `numpy`, `scipy` | Standard numerical routines |
-| `matplotlib`, `seaborn`, `plotly` | Plotting |
+| `numpy` | Standard numerical routines |
+| `matplotlib` | Plotting |
+| `jupyter` | Running the notebooks |
 
-> **Note:** This environment was built on Windows (x64). Linux/macOS users may need to adjust or recreate the environment from the package list.
+Exact versions are pinned in `requirements.txt`. Inference with NumPyro and ArviZ is handled in the [companion HMC repository](https://github.com/barnlewis97/HMC-for-Perovskite-TRPL-Kinetics).
 
 ---
 
@@ -168,3 +173,9 @@ The models here solve these coupled rate equations numerically using the stiff K
 If you use this code in your research, please cite this repository and any relevant model references, including:
 
 - [DOI: 10.1103/PRXEnergy.4.013001](https://doi.org/10.1103/PRXEnergy.4.013001) (DT Model)
+
+---
+
+## Licence
+
+MIT Licence — see `LICENSE` for details.
