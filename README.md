@@ -103,7 +103,7 @@ $$\frac{dn}{dt},\ \frac{dp}{dt},\ \frac{dn_{t1}}{dt},\ \frac{dn_{t2}}{dt}$$
 
 ## Notebooks
 
-There is one simulation notebook per model: `ABC`, `BTD`, `DT`, `DTShallowVar`, `DTDeepVar` and `ShallowTrapVar` (`<Name> Simulation.ipynb`). Each simulates TRPL decays across a range of initial carrier densities and produces:
+There is a simulation notebook for each of the `ABC`, `BTD`, `DT`, `DTShallowVar` and `DTDeepVar` models (`<Name> Simulation.ipynb`). Each simulates TRPL decays across a range of initial carrier densities and produces:
 - TRPL decay curves (log-log) with and without background signal
 - Differential lifetime τ vs QFLS
 - Differential rate constant k vs QFLS
