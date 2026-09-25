@@ -18,8 +18,18 @@ The models are intended for fitting experimental TRPL data from semiconductor th
 
 ## Models
 
-### ABC Model — `TRPL_ABC_Model`
-A standard three-process model for charge carrier decay:
+Every model in `globalfit_functions.py` follows the same layout:
+
+| Function | Purpose |
+|----------|---------|
+| `<Name>_Model(t, y, args)` | Rate equations (Diffrax right-hand side) |
+| `solve_<Name>(t, ...)` | Solves the ODE system at the times in `t` |
+| `TRPL_<Name>(t, ..., bkg)` | Returns `(log10 TRPL signal, carrier densities...)` |
+
+The TRPL signal is normalised to its value at t = 0 with a background `bkg` added. Carrier densities are returned in the order free electrons, holes, trapped electrons. Units are cm⁻³ and ns throughout.
+
+### ABC Model — `TRPL_ABC`
+A standard three-process model for charge carrier decay. `TRPL_AB` is the same model with `k_C = 0`.
 
 $$\frac{dn}{dt} = -k_A n - k_B n^2 - k_C n^3$$
 
@@ -30,10 +40,12 @@ $$\frac{dn}{dt} = -k_A n - k_B n^2 - k_C n^3$$
 | `k_C` | Auger recombination rate constant (cm⁶ ns⁻¹) |
 | `n_0` | Initial carrier density (cm⁻³) |
 
+Returns `(signal, n)`.
+
 ---
 
-### BTD Model — `TRPL_BTD_Model`
-An extended model tracking electrons, trapped carriers, and holes separately, including Auger recombination, trapping, detrapping, and trap depopulation:
+### BTD Model — `TRPL_BTD`
+Bimolecular-Trapping-Detrapping model tracking electrons, trapped carriers, and holes separately, including Auger recombination, trapping, detrapping, and trap depopulation:
 
 | Parameter | Description |
 |-----------|-------------|
@@ -46,22 +58,32 @@ An extended model tracking electrons, trapped carriers, and holes separately, in
 | `p0` | Background / equilibrium hole density (cm⁻³) |
 | `N0` | Initial carrier density (cm⁻³) |
 
----
-
-### Dual Trap Models — `DualTrap_Model`, `DTShallowVar`, `DTDeepVar_Model`
-Rate equation models with two distinct trap populations (shallow and deep), for materials exhibiting complex multi-exponential decays. Variants explore different assumptions about trap filling, charge neutrality, and which carriers are tracked explicitly.
+Returns `(signal, n_e, n_h, n_t)`.
 
 ---
 
-### Full REM — `Full_REM_Model`
-A general 4-state model tracking electrons, holes, and two independent trap populations with full capture/emission kinetics for each trap:
+### Dual Trap Models
+Two trap populations: a shallow trap that captures and re-emits electrons (de-trapping, no recombination) and a deep trap that removes carriers non-radiatively (depopulation). The variants differ in which trap has a finite density, so that capture scales with (N_T − n_T):
+
+| Model | Shallow trap | Deep trap | Returns |
+|-------|--------------|-----------|---------|
+| `TRPL_DT` | constant capture rate | constant capture rate | `(signal, n, p, n_t)` |
+| `TRPL_DTShallowVar` | finite density N_t1 | constant capture rate | `(signal, n, p, n_t1)` |
+| `TRPL_DTDeepVar` | constant capture rate | finite density N_t2, hole capture by filled traps | `(signal, n, p, n_t1, n_t2)` |
+
+`DT` is the model from [DOI: 10.1103/PRXEnergy.4.013001](https://doi.org/10.1103/PRXEnergy.4.013001) and includes Auger recombination. `DTShallowVar` gets holes from charge neutrality (p = n + n_t1), so deep-trap recombination is treated as instantaneous.
+
+---
+
+### ShallowTrapVar Model — `TRPL_ShallowTrapVar`
+A single shallow trap with finite density N_T, plus radiative and Auger recombination. Returns `(signal, n, p, n_t)`.
+
+---
+
+### Full REM — `FullREM_Model`
+A general 4-state model tracking electrons, holes, and two independent trap populations with full capture/emission kinetics for each trap (rate equations only, no solver):
 
 $$\frac{dn}{dt},\ \frac{dp}{dt},\ \frac{dn_{t1}}{dt},\ \frac{dn_{t2}}{dt}$$
-
----
-
-### DT Model — `DT_Model` / `TRPL_DT_Model`
-Two-variable model (electrons + shallow trap) including radiative recombination, Auger recombination, capture, deep-trap loss, and emission. Based on [DOI: 10.1103/PRXEnergy.4.013001](https://doi.org/10.1103/PRXEnergy.4.013001).
 
 ---
 
@@ -81,19 +103,13 @@ Two-variable model (electrons + shallow trap) including radiative recombination,
 
 ## Notebooks
 
-### `ABC Simulation.ipynb`
-Simulates TRPL decay curves and differential transformations across a range of initial carrier densities using the ABC model. Produces:
+There is one simulation notebook per model: `ABC`, `BTD`, `DT`, `DTShallowVar`, `DTDeepVar` and `ShallowTrapVar` (`<Name> Simulation.ipynb`). Each simulates TRPL decays across a range of initial carrier densities and produces:
 - TRPL decay curves (log-log) with and without background signal
 - Differential lifetime τ vs QFLS
 - Differential rate constant k vs QFLS
-- Stacked contribution plots showing relative weight of Auger, bimolecular, and trapping recombination over time
-
-### `BTD Simulation.ipynb`
-Simulates the full BTD model across a range of injection densities. Produces:
-- TRPL decay curves
-- Differential lifetime and rate constant vs QFLS
-- Individual carrier concentration dynamics (free electrons, trapped electrons, holes, available traps)
-- Stacked process contribution plots
+- Carrier concentration dynamics (free electrons, trapped electrons, holes, available traps) for the trap models
+- Stacked contribution plots showing the relative weight of each recombination and trapping process over time
+- Parameter sweeps showing the effect of the key trap parameters (the BTD notebook sweeps k_T, N_T and k_DP)
 
 ---
 
@@ -109,7 +125,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-jupyter notebook                 # then open either simulation notebook
+jupyter notebook                 # then open any of the simulation notebooks
 ```
 
 `requirements.txt` pins the package versions used for the thesis simulations. For GPU acceleration, install the matching CUDA `jaxlib` wheel afterwards (see the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html)).
@@ -139,7 +155,7 @@ import jax.numpy as jnp
 time = jnp.logspace(0, jnp.log10(100001), 1000) - 1
 
 # Simulate BTD model TRPL decay
-log_signal, n_e, n_t, n_p = TRPL_BTD_Model(
+log_signal, n_e, n_p, n_t = TRPL_BTD(
     t=time,
     ka=1e-37,   # Auger
     kt=1e-17,   # Trapping
