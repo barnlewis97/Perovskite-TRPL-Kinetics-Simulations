@@ -113,6 +113,28 @@ There is a simulation notebook for each of the `ABC`, `BTD`, `DT`, `DTShallowVar
 
 ---
 
+## Interactive GUI
+
+`TRPL_GUI.py` simulates any of the models (`ABC`, `BTD`, `DT`, `DTShallowVar`, `DTDeepVar`, `ShallowTrapVar`, `FullREM`) from a Tkinter window:
+
+```bash
+python TRPL_GUI.py
+```
+
+- Pick the model from the drop-down menu. Its rate equations are shown under it.
+- Enter any number of initial carrier densities, comma separated (e.g. `1e14, 1e15, 1e16`).
+- Edit the parameter values (cm⁻³ and ns units, as in `globalfit_functions.py`). Unticking a parameter sets it to zero in the rate equations.
+- Three plots are produced:
+  - the normalised TRPL, with a log-log / lin-log toggle for the time axis
+  - τ_diff = (−½ d ln I_PL/dt)⁻¹ against the PL-derived carrier density n_PL = Δn₀ √(I_PL/I_PL(0)) (log-log)
+  - k_diff = −(1/2n_PL) d ln I_PL/dt against n_PL (log-log)
+
+  These are the definitions in the k_diff/BTD paper (Eq. S1). An optional background is added to the normalised PL before the transformations.
+
+The first simulation with each model takes a few seconds while JAX compiles it.
+
+---
+
 ## Installation
 
 Requires Python 3.11 or later.
