@@ -10,6 +10,7 @@ This repository provides:
 
 - A library of ODE-based charge carrier models (`globalfit_functions.py`) compiled with JAX JIT for fast, differentiable simulation
 - Jupyter notebooks demonstrating simulation and analysis of TRPL decays for different physical regimes
+- An interactive GUI (`TRPL_GUI.py`) for simulating any model, with a band-diagram schematic that follows the selected processes and `.npy` export for the HMC fitting pipeline
 - A pinned `requirements.txt` for reproducible installation
 
 The models are intended for fitting experimental TRPL data from semiconductor thin films (e.g. perovskites), and are compatible with probabilistic inference frameworks such as NumPyro (HMC/NUTS) or approximate Bayesian computation (ABC). The Bayesian fitting pipeline that uses these models is in the companion repository [HMC-for-Perovskite-TRPL-Kinetics](https://github.com/barnlewis97/HMC-for-Perovskite-TRPL-Kinetics).
@@ -103,13 +104,37 @@ $$\frac{dn}{dt},\ \frac{dp}{dt},\ \frac{dn_{t1}}{dt},\ \frac{dn_{t2}}{dt}$$
 
 ## Notebooks
 
-There is one simulation notebook per model: `ABC`, `BTD`, `DT`, `DTShallowVar`, `DTDeepVar` and `ShallowTrapVar` (`<Name> Simulation.ipynb`). Each simulates TRPL decays across a range of initial carrier densities and produces:
+There is a simulation notebook for each of the `ABC`, `BTD`, `DT`, `DTShallowVar` and `DTDeepVar` models (`<Name> Simulation.ipynb`). Each simulates TRPL decays across a range of initial carrier densities and produces:
 - TRPL decay curves (log-log) with and without background signal
 - Differential lifetime τ vs QFLS
 - Differential rate constant k vs QFLS
 - Carrier concentration dynamics (free electrons, trapped electrons, holes, available traps) for the trap models
 - Stacked contribution plots showing the relative weight of each recombination and trapping process over time
 - Parameter sweeps showing the effect of the key trap parameters (the BTD notebook sweeps k_T, N_T and k_DP)
+
+---
+
+## Interactive GUI
+
+`TRPL_GUI.py` simulates any of the models (`ABC`, `BTD`, `DT`, `DTShallowVar`, `DTDeepVar`, `ShallowTrapVar`, `Full Model - 1 Trap`, `Full Model - 2 Traps`) from a Tkinter window. Both full models are solved with `FullREM_Model`, the 1-trap version by setting the second trap's density to zero:
+
+```bash
+python TRPL_GUI.py
+```
+
+- Pick the model from the drop-down menu. A one-sentence description, a band-diagram schematic and the typeset rate equations are shown above the plots. The round **i** button opens a key to every symbol used by that model.
+- Enter any number of initial carrier densities, comma separated (e.g. `1e14, 1e15, 1e16`).
+- Edit the parameter values (cm⁻³ and ns units, as in `globalfit_functions.py`). Unticking a parameter sets it to zero in the rate equations and removes its process from the schematic. Symbols follow the BTD notation in every model (k_T trapping, k_DT de-trapping, k_DP depopulation, k_HE hole emission, k_B bimolecular, k_A Auger, N_T trap density, with 1 for the shallow and 2 for the deep trap), except the ABC model, which uses A, B and C. Carrier densities are written Δn and Δp; in the BTD model p = Δp + p₀ is the total hole density. The argument names in `globalfit_functions.py` are unchanged.
+- Three plots are produced:
+  - the normalised TRPL, with a log-log / lin-log toggle for the time axis
+  - τ_diff = (−½ d ln I_PL/dt)⁻¹ against the PL-derived carrier density n_PL = Δn₀ √(I_PL/I_PL(0)) (log-log)
+  - k_diff = −(1/2n_PL) d ln I_PL/dt against n_PL (log-log)
+
+  These are the definitions in the k_diff/BTD paper (Eq. S1). An optional background is added to the normalised PL before the transformations.
+- Curves are drawn as dots. "Dots per curve" only thins what is plotted; the derivatives and the export always use the full time grid.
+- **Export data** saves the latest simulation as `SimTRPL_<model>.npy` (the name can be changed), in the format the HMC repository reads: shape `(1 + n_decays, n_time)`, with the time axis in ns in row 0 and one normalised decay per row from the highest initial carrier density to the lowest.
+
+The first simulation with each model takes a few seconds while JAX compiles it.
 
 ---
 

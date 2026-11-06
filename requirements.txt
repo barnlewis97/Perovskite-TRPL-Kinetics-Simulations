@@ -32,5 +32,5 @@ seaborn==0.13.2
 plotly==6.3.0
 ipykernel==6.29.5
 
-# Note: HMC_BTDModel_GUI.py also needs tkinter, which ships with most Python
+# Note: HMC_GUI.py also needs tkinter, which ships with most Python
 # installers but not with pip. On Debian/Ubuntu: sudo apt install python3-tk
