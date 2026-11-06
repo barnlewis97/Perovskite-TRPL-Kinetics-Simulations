@@ -20,8 +20,9 @@ Manual tab
         I_PL     ∝ kB n p
 
     where Si = NTi - nTi if the trap's density is ticked. Without a density the trap
-    cannot saturate: Si = 1, so capture is first order (ns^-1) and hole emission, which
-    needs a density of empty traps, is unavailable. The decay starts from n = dp = n0
+    cannot saturate: Si = 1, and kECi is then the pseudo-first-order constant kEC NT
+    (ns^-1), as capture is second order until the density is absorbed into it. Hole
+    emission, which needs a density of empty traps, is unavailable. The decay starts from n = dp = n0
     with the traps empty.
 
 SRH tab
@@ -222,7 +223,8 @@ def thermal_equilibrium(traps, doping, Eg, T, NC, NV):
 # =============================================================================
 # Each parameter is (name, default value, unit, description, mathtext symbol), as in
 # TRPL_GUI. A trap's capture has one Manual row with two values: k_EC (second order)
-# is used if the density is ticked and k_EC_f (first order, in ns^-1) if it is not.
+# is used if the density is ticked and k_EC_f, the pseudo-first-order constant k_EC N_T
+# in ns^-1, if it is not. Their defaults agree with the default density.
 
 RECOMBINATION_PARAMS = [
     ("k_B", 1e-19, BIMOL, "Bimolecular (radiative)", KB),
@@ -250,7 +252,7 @@ MANUAL_NI_WARNING = "Set by hand: breaks detailed balance"
 def manual_trap_params(i):
     return [
         (f"k_EC{i}", 1e-17, BIMOL, "Electron capture", base.k(f"EC{i}")),
-        (f"k_EC{i}_f", 1e-3, RATE, "Electron capture (first order)", base.k(f"EC{i}")),
+        (f"k_EC{i}_f", 1e-2, RATE, "Electron capture × N_T (pseudo-first order)", base.k(f"EC{i}")),
         (f"k_EE{i}", 1e-3, RATE, "Electron emission", base.k(f"EE{i}")),
         (f"k_HC{i}", 1e-19, BIMOL, "Hole capture", base.k(f"HC{i}")),
         (f"k_HE{i}", 1e-23, RATE, "Hole emission", base.k(f"HE{i}")),
@@ -485,8 +487,8 @@ def coupling_ratio(trap, i, a, n_ref):
     """
     How strongly trap ``i`` exchanges electrons with the CB compared with the VB.
 
-    R = (k_EC n_ref + k_EE) / (k_HC n_ref + k_HE), with first-order capture counted as
-    it stands, as it is already in ns^-1. ``trap`` holds its ticked rows and values, and
+    R = (k_EC n_ref + k_EE) / (k_HC n_ref + k_HE), with the pseudo-first-order capture
+    constant counted as it stands, as it is already in ns^-1. ``trap`` holds its ticked rows and values, and
     ``n_ref`` stands in for both carrier densities. Infinite if it has no VB channel.
     """
     cb, vb = 0.0, 0.0
