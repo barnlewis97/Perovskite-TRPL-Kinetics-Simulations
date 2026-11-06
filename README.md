@@ -116,6 +116,8 @@ There is a simulation notebook for each of the `ABC`, `BTD`, `DT`, `DTShallowVar
 
 ## Interactive GUI
 
+**See [GUI_GUIDE.md](GUI_GUIDE.md) for full installation steps, instructions, theory, limitations and troubleshooting.**
+
 `TRPL_GUI.py` simulates any of the models (`ABC`, `BTD`, `DT`, `DTShallowVar`, `DTDeepVar`, `ShallowTrapVar`, `Full Model - 1 Trap`, `Full Model - 2 Traps`) from a Tkinter window. Both full models are solved with `FullREM_Model`, the 1-trap version by setting the second trap's density to zero:
 
 ```bash
@@ -127,14 +129,31 @@ python TRPL_GUI.py
 - Edit the parameter values (cm⁻³ and ns units, as in `globalfit_functions.py`). Unticking a parameter sets it to zero in the rate equations and removes its process from the schematic. Symbols follow the BTD notation in every model (k_T trapping, k_DT de-trapping, k_DP depopulation, k_HE hole emission, k_B bimolecular, k_A Auger, N_T trap density, with 1 for the shallow and 2 for the deep trap), except the ABC model, which uses A, B and C. Carrier densities are written Δn and Δp; in the BTD model p = Δp + p₀ is the total hole density. The argument names in `globalfit_functions.py` are unchanged.
 - Three plots are produced:
   - the normalised TRPL, with a log-log / lin-log toggle for the time axis
-  - τ_diff = (−½ d ln I_PL/dt)⁻¹ against the PL-derived carrier density n_PL = Δn₀ √(I_PL/I_PL(0)) (log-log)
-  - k_diff = −(1/2n_PL) d ln I_PL/dt against n_PL (log-log)
+  - τ_diff = (−½ d ln I_PL/dt)⁻¹ against the PL-derived carrier density n_PL = Δn₀ √(I_PL/I_PL(0)) or time (log-log, switched in the Display card)
+  - k_diff = −(1/2n_PL) d ln I_PL/dt against n_PL or time (log-log, same switch)
 
   These are the definitions in the k_diff/BTD paper (Eq. S1). An optional background is added to the normalised PL before the transformations.
 - Curves are drawn as dots. "Dots per curve" only thins what is plotted; the derivatives and the export always use the full time grid.
-- **Export data** saves the latest simulation as `SimTRPL_<model>.npy` (the name can be changed), in the format the HMC repository reads: shape `(1 + n_decays, n_time)`, with the time axis in ns in row 0 and one normalised decay per row from the highest initial carrier density to the lowest.
+- **Export data** has a button for each quantity, and each default name can be changed:
+  - **TRPL** saves `SimTRPL_<model>.npy`, in the format the HMC repository reads: shape `(1 + n_decays, n_time)`, with the time axis in ns in row 0 and one normalised decay per row from the highest initial carrier density to the lowest.
+  - **τ_diff** saves `SimTauDiff_<model>.npy` (in s) and **k_diff** saves `SimKDiff_<model>.npy` (in cm³ s⁻¹). Both have shape `(1 + 2 n_decays, n_time)`: time in ns in row 0, then the quantity for each decay from the highest density to the lowest, then each decay's n_PL in cm⁻³ in the same order.
 
 The first simulation with each model takes a few seconds while JAX compiles it.
+
+### Building a model from its processes
+
+`TRPL_GUI_Selective.py` has the same plots, schematic, symbol key and export, but builds the model from individual processes instead of offering a fixed list. It needs `TRPL_GUI.py` alongside it:
+
+```bash
+python TRPL_GUI_Selective.py
+```
+
+It starts with one trap. **Add Trap** adds as many more as you like and **Remove trap** deletes one, though too many can cause numerical instability and make the simulation crash. Trap subscripts are EC electron capture, EE electron emission, HC hole capture and HE hole emission. There are two tabs:
+
+- **Manual**: tick processes and set every rate independently. A trap with no density ticked cannot saturate and captures at a first-order rate. The drop-down loads any fixed model as a starting point. `BTD`, `DTShallowVar`, `DTDeepVar` and both full models are reproduced with the same equations, and `ABC` with k_A = C/2. `DT` and `ShallowTrapVar` are only approximate, because those models treat p₀ and the PL or Auger terms differently; the module docstring gives the details.
+- **SRH (detailed balance)**: set each trap's depth, capture coefficients and density. The emission rates and n_i follow from detailed balance, and the decay starts from thermal equilibrium found from charge neutrality, following [Heumann et al., arXiv:2609.18438](https://arxiv.org/abs/2609.18438) (Eqs. 4–9 and 20–23). The default material values (E_g = 1.625 eV, T = 300 K, N_C = N_V = 2.2×10¹⁸ cm⁻³) and first trap are from that work. Change them to suit your material. Setting n_i by hand is allowed, but detailed balance with the traps is then no longer exact.
+
+Each new number of traps compiles once, taking a few seconds.
 
 ---
 
@@ -151,7 +170,12 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 jupyter notebook                 # then open any of the simulation notebooks
+
+python TRPL_GUI.py               # or start a GUI
+python TRPL_GUI_Selective.py
 ```
+
+Alternatively, `conda env create -f HMC_env.yml` followed by `conda activate MCMC_env` creates the exact conda environment. The GUIs also need Tkinter, which comes with the python.org and Anaconda installers; on Debian or Ubuntu, run `sudo apt install python3-tk`.
 
 `requirements.txt` pins the package versions used for the thesis simulations. For GPU acceleration, install the matching CUDA `jaxlib` wheel afterwards (see the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html)).
 
@@ -163,6 +187,7 @@ jupyter notebook                 # then open any of the simulation notebooks
 | `diffrax` | JAX-native ODE solver (Kvaerno5 stiff solver used throughout) |
 | `equinox` | JAX neural network / filter utilities |
 | `numpy` | Standard numerical routines |
+| `scipy` | Fermi-level root finding in the SRH model builder |
 | `matplotlib` | Plotting |
 | `jupyter` | Running the notebooks |
 
