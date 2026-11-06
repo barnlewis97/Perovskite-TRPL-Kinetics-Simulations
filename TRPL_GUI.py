@@ -116,6 +116,8 @@ RATE = "ns⁻¹"
 BIMOL = "cm³ ns⁻¹"
 AUGER = "cm⁶ ns⁻¹"
 DENS = "cm⁻³"
+# The same rate constants per second, shown in grey beside the inputs
+PER_SECOND = {RATE: "s⁻¹", BIMOL: "cm³ s⁻¹", AUGER: "cm⁶ s⁻¹"}
 
 # Trap level positions in the band diagram (see draw_schematic for the band edges)
 SHALLOW, DEEP = 2.15, 1.85
@@ -452,6 +454,17 @@ def sci_label(x):
     return rf"$\mathdefault{{{mant:.3g}\times10^{{{exp}}}}}$"
 
 
+def converted_text(text, factor, unit):
+    """'(value × factor unit)' for an input's text, or '' if it is not a number."""
+    try:
+        value = float(text) * factor
+    except ValueError:
+        return ""
+    # Round away float noise and tidy the exponent: 1e-08 -> 1e-8, 1e+06 -> 1e6
+    number = re.sub(r"e\+?(-?)0*", r"e\1", f"{value:.4g}")
+    return f"({number} {unit})"
+
+
 def export_array(results):
     """
     Decays in the HMC repository's data format, shape (1 + n_decays, n_time).
@@ -485,6 +498,7 @@ FIELD = "#ffffff"
 BORDER = "#a9c1da"
 INK = "#14233a"
 MUTED = "#4d6078"
+GREY = "#7a7a7a"
 GRID = "#e6ebf2"
 ACCENT = "#1f6fd1"
 ACCENT_ACTIVE = "#185bb0"
@@ -810,6 +824,13 @@ class TRPLApp(tk.Tk):
                 for name, val, *_ in spec["params"]}
             for m, spec in MODELS.items()
         }
+        # Grey read-only conversions of the inputs, following what is typed
+        self.param_si = {
+            m: {name: self._converted(self.param_state[m][name][1], 1e9, PER_SECOND[unit])
+                for name, _, unit, *_ in spec["params"] if unit in PER_SECOND}
+            for m, spec in MODELS.items()
+        }
+        self.tmax_us = self._converted(self.tmax_var, 1e-3, "µs")
         self.results = None
         self._worker = None
         self._symbols = {}       # rendered parameter symbols
@@ -830,6 +851,13 @@ class TRPLApp(tk.Tk):
 
         # Maximise once mapped: done any earlier, the geometry above overrides it
         self.after(10, self._maximise)
+
+    def _converted(self, source, factor, unit):
+        """A StringVar holding ``source`` converted to other units, kept up to date."""
+        target = tk.StringVar(value=converted_text(source.get(), factor, unit))
+        source.trace_add("write", lambda *_: target.set(
+            converted_text(source.get(), factor, unit)))
+        return target
 
     def _maximise(self):
         try:
@@ -856,6 +884,7 @@ class TRPLApp(tk.Tk):
         s.configure("Status.TLabel", background=BG, foreground=ON_BG, font=(UI_FONT, 9))
         s.configure("Heading.TLabel", font=(UI_FONT, 10, "bold"))
         s.configure("Muted.TLabel", foreground=MUTED, font=(UI_FONT, 9))
+        s.configure("Converted.TLabel", foreground=GREY, font=(UI_FONT, 9))
         for widget in ("TEntry", "TCombobox", "TSpinbox"):
             s.configure(widget, fieldbackground=FIELD, padding=2, arrowcolor=MUTED,
                         lightcolor=FIELD, darkcolor=FIELD, background=FIELD)
@@ -971,6 +1000,8 @@ class TRPLApp(tk.Tk):
                                             ("Background (rel. to I₀)", self.bkg_var)]):
             ttk.Label(grid, text=label).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=2)
             ttk.Entry(grid, textvariable=var, width=12).grid(row=row, column=1, sticky="w", pady=2)
+        ttk.Label(grid, textvariable=self.tmax_us, style="Converted.TLabel").grid(
+            row=0, column=2, sticky="w", padx=(8, 0))
 
         card = self._card(panel, "Display", pady=0)
         grid = ttk.Frame(card)
@@ -1079,9 +1110,14 @@ class TRPLApp(tk.Tk):
                                  command=lambda e=entry, v=on: self._toggle(e, v))
             cb.grid(row=row, column=0, sticky="w", padx=(0, 10), pady=1)
             entry.grid(row=row, column=1, sticky="w", pady=1)
-            ttk.Label(self.param_frame, text=unit).grid(row=row, column=2, sticky="w", padx=(8, 10))
+            ttk.Label(self.param_frame, text=unit).grid(row=row, column=2, sticky="w", padx=(8, 6))
+            if name in self.param_si[model]:
+                # Fixed width so the sidebar does not resize while a value is typed
+                ttk.Label(self.param_frame, textvariable=self.param_si[model][name], width=19,
+                          style="Converted.TLabel").grid(row=row, column=3, sticky="w",
+                                                         padx=(0, 6))
             ttk.Label(self.param_frame, text=desc, style="Muted.TLabel").grid(
-                row=row, column=3, sticky="w")
+                row=row, column=4, sticky="w")
             self._toggle(entry, on)
 
     def _show_key(self):
