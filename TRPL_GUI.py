@@ -46,6 +46,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Polygon, Rectangle
 from matplotlib.transforms import IdentityTransform
+from PIL import Image, ImageDraw, ImageTk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import globalfit_functions as gf  # noqa: E402  (sets JAX x64 and EQX_ON_ERROR)
@@ -327,7 +328,7 @@ MODELS = {
         schematic=[
             dict(kind="trap", level=DEEP, capture="beta_n_t1", emit="e_n_t1",
                  hole="beta_p_t1", hole_emit="e_p_t1", density="N_t1"),
-            dict(kind="radiative", k="krad", generation="ni"),
+            dict(kind="radiative", k="krad"),
         ],
         # The second trap of the full solver is switched off by giving it zero density
         run=lambda t, n0, p: TRPL_FullREM(t, n0, p["krad"], p["ni"], p["beta_n_t1"], p["beta_p_t1"],
@@ -365,7 +366,7 @@ MODELS = {
                  hole="beta_p_t1", hole_emit="e_p_t1", density="N_t1"),
             dict(kind="trap", level=DEEP, capture="beta_n_t2", emit="e_n_t2",
                  hole="beta_p_t2", hole_emit="e_p_t2", density="N_t2"),
-            dict(kind="radiative", k="krad", generation="ni"),
+            dict(kind="radiative", k="krad"),
         ],
         run=lambda t, n0, p: TRPL_FullREM(t, n0, p["krad"], p["ni"], p["beta_n_t1"], p["beta_p_t1"],
                                           p["e_n_t1"], p["e_p_t1"], p["N_t1"], p["beta_n_t2"],
@@ -505,6 +506,7 @@ ACCENT_ACTIVE = "#185bb0"
 DISABLED = "#c9d6e5"
 ON_BG = "#d7e6f7"
 DEFAULT_DOTS = 70
+CARD_RADIUS, CARD_INSET = 10, 3     # the inset keeps a panel's contents clear of its corners
 UI_FONT = ("Segoe UI" if "Segoe UI" in {f.name for f in font_manager.fontManager.ttflist}
            else "DejaVu Sans")
 
@@ -532,6 +534,25 @@ matplotlib.rcParams.update({
     "figure.facecolor": CARD,
     "axes.facecolor": FIELD,
 })
+
+
+def rounded_image(width, height, radius, fill, border, corner):
+    """An anti-aliased rounded box, with ``corner`` showing outside its rounded corners."""
+    width, height = max(width, 2 * radius + 2), max(height, 2 * radius + 2)
+    # The corners are drawn oversized and scaled down; only they need anti-aliasing
+    scale, side = 4, radius + 1
+    tile = Image.new("RGB", (2 * side * scale, 2 * side * scale), corner)
+    ImageDraw.Draw(tile).rounded_rectangle((0, 0, 2 * side * scale - 1, 2 * side * scale - 1),
+                                           radius * scale, fill=fill, outline=border, width=scale)
+    tile = tile.resize((2 * side, 2 * side), Image.LANCZOS)
+
+    image = Image.new("RGB", (width, height), fill)
+    ImageDraw.Draw(image).rectangle((0, 0, width - 1, height - 1), fill=fill, outline=border)
+    image.paste(tile.crop((0, 0, side, side)), (0, 0))
+    image.paste(tile.crop((side, 0, 2 * side, side)), (width - side, 0))
+    image.paste(tile.crop((0, side, side, 2 * side)), (0, height - side))
+    image.paste(tile.crop((side, side, 2 * side, 2 * side)), (width - side, height - side))
+    return image
 
 
 def render_math(rows, fontsize, dpi, color=INK, bg=CARD):
@@ -633,14 +654,14 @@ def enable_hidpi():
 #   srh         first-order trap recombination: electron and hole meet at a level
 #   trap        level with optional capture, emit, hole, hole_emit arrows; the whole
 #               trap goes if its density is off or none of its arrows are active
-#   radiative   band-to-band recombination emitting a photon (optional generation)
+#   radiative   band-to-band recombination emitting a photon
 #   auger       electron-electron-hole recombination
 #   background  background holes in the VB
 
 VB_TOP, CB_BOTTOM, BAND = 1.15, 2.75, 1.15     # band edges and band thickness
 ELECTRON_Y, HOLE_Y, RADIUS = CB_BOTTOM + 0.33, VB_TOP - 0.33, 0.27
 COMPONENT_WIDTH = dict(srh=1.5, radiative=2.1, auger=2.1, background=1.0)
-GENERATION_ROOM = 0.45     # extra width for the thermal generation arrow and label
+TRAP_WIDTH = (2.3, 1.85)   # width of a trap with and without labels on its right
 
 CB_CMAP = LinearSegmentedColormap.from_list("cb", ["#a9cbea", "#f1f7fd"])
 VB_CMAP = LinearSegmentedColormap.from_list("vb", ["#001f5c", "#1a5a9c", "#e1e9f1"])
@@ -655,12 +676,11 @@ def component_visible(comp, active):
 
 
 def component_width(comp, active):
-    if comp["kind"] == "radiative" and comp.get("generation") in active:
-        return COMPONENT_WIDTH["radiative"] + GENERATION_ROOM
     if comp["kind"] != "trap":
         return COMPONENT_WIDTH[comp["kind"]]
-    has_right_side = any(comp.get(a) in active for a in ("emit", "density", "hole_emit"))
-    return 2.3 if has_right_side else 1.85
+    has_right_side = comp.get("energy") or any(
+        comp.get(a) in active for a in ("emit", "density", "hole_emit"))
+    return TRAP_WIDTH[0] if has_right_side else TRAP_WIDTH[1]
 
 
 def draw_schematic(ax, components, active, symbols):
@@ -722,40 +742,51 @@ def draw_schematic(ax, components, active, symbols):
         elif kind == "trap":
             cx, y = x + 1.3, comp["level"]
             level(cx, y)
-            if comp.get("density") in active:
+            # A level placed by its "energy" can sit near a band. Its rate labels then stay
+            # clear of the band edges and the level, and its density and energy text go in
+            # a column of their own to the right, which nothing can run into.
+            energy = comp.get("energy")
+            has_density = comp.get("density") in active
+            clear = 0.4 if energy else 0.0
+            top_max, bottom_min = (edge_cb - 0.14, edge_vb + 0.14) if energy else (edge_cb, edge_vb)
+            if energy:
+                middle = (VB_TOP + CB_BOTTOM) / 2
+                if has_density:
+                    label(cx + 1.35, middle + 0.15, comp["density"], color=MUTED)
+                ax.text(cx + 1.35, middle - 0.15 if has_density else middle, energy, ha="left",
+                        va="center", fontsize=0.22 * unit, color=MUTED, zorder=6)
+            elif has_density:
                 label(cx + 0.42, y, comp["density"], color=MUTED)
             if comp.get("capture") in active:
                 ex = cx - 0.6
                 carrier(ex, ELECTRON_Y, "−")
                 arrow((ex, edge_cb), (cx - 0.28, y + 0.05), rad=0.3)
-                label(ex - 0.08, (edge_cb + y) / 2 - 0.02, comp["capture"], ha="right")
+                label(ex - 0.08, min((edge_cb + y) / 2 - 0.02, top_max), comp["capture"], ha="right")
             if comp.get("emit") in active:
                 arrow((cx + 0.28, y + 0.05), (cx, edge_cb), rad=0.3)
-                label(cx + 0.32, (edge_cb + y) / 2 + 0.1, comp["emit"])
+                label(max(cx + 0.32, cx + clear), min((edge_cb + y) / 2 + 0.1, top_max), comp["emit"])
             both = comp.get("hole") in active and comp.get("hole_emit") in active
             if comp.get("hole") in active:
                 hx = cx - 0.1 if both else cx
                 carrier(cx, HOLE_Y, "+")
                 arrow((hx, edge_vb), (hx, y - 0.04))
-                label(hx - 0.1 if both else hx + 0.1, (edge_vb + y) / 2, comp["hole"],
-                      ha="right" if both else "left")
+                hole_y = max((edge_vb + y) / 2, bottom_min)
+                if both:
+                    label(min(hx - 0.1, cx - clear), hole_y, comp["hole"], ha="right")
+                else:
+                    label(max(hx + 0.1, cx + clear), hole_y, comp["hole"])
             if comp.get("hole_emit") in active:
                 carrier(cx, HOLE_Y, "+")
                 arrow((cx + 0.1, y - 0.04), (cx + 0.1, edge_vb))
-                label(cx + 0.2, (edge_vb + y) / 2, comp["hole_emit"])
+                label(max(cx + 0.2, cx + clear), max((edge_vb + y) / 2, bottom_min),
+                      comp["hole_emit"])
         elif kind == "radiative":
             cx, y = x + 0.65, (VB_TOP + CB_BOTTOM) / 2
-            if comp.get("generation") in active:
-                cx += GENERATION_ROOM
             carrier(cx, ELECTRON_Y, "−")
             carrier(cx, HOLE_Y, "+")
             arrow((cx, edge_cb), (cx, edge_vb))
             photon(cx + 0.18, y - 0.12)
             label(cx + 0.18, y + 0.3, comp["k"])
-            if comp.get("generation") in active:
-                arrow((cx - 0.2, edge_vb), (cx - 0.2, edge_cb), color=MUTED, lw=1.2)
-                ax.text(cx - 0.3, y, f"${symbols[comp['generation']]}^2$", ha="right",
-                        va="center", fontsize=0.32 * unit, color=MUTED, zorder=6)
         elif kind == "auger":
             cx = x + 0.55
             carrier(cx, ELECTRON_Y, "−")
@@ -799,6 +830,10 @@ def draw_schematic(ax, components, active, symbols):
 # =============================================================================
 
 class TRPLApp(tk.Tk):
+    # Overridden by the tick-box builder in TRPL_GUI_Selective.py
+    START_MODEL = "BTD"
+    PARAM_HINT = "Untick to set to zero and remove from the schematic"
+
     def __init__(self):
         enable_hidpi()
         super().__init__()
@@ -809,7 +844,7 @@ class TRPLApp(tk.Tk):
         self.geometry("1500x820")
         self.pack_propagate(False)      # the window must not resize to fit its contents
 
-        self.model_var = tk.StringVar(value="BTD")
+        self.model_var = tk.StringVar(value=self.START_MODEL)
         self.n0_var = tk.StringVar(value="1e14, 1e15, 1e16, 1e17, 1e18")
         self.tmax_var = tk.StringVar(value="150000")
         self.npts_var = tk.StringVar(value="1000")
@@ -909,32 +944,77 @@ class TRPLApp(tk.Tk):
         s.configure("TRadiobutton", indicatorcolor=FIELD)
         s.map("TRadiobutton", background=[("active", CARD)],
               indicatorcolor=[("selected", ACCENT), ("pressed", BORDER)])
-        s.configure("TButton", padding=(10, 6), background=CARD, foreground=INK,
-                    bordercolor=BORDER, lightcolor=CARD, darkcolor=CARD)
-        s.map("TButton",
-              background=[("disabled", DISABLED), ("active", "#d3e4f6")],
-              lightcolor=[("disabled", DISABLED), ("active", "#d3e4f6")],
-              darkcolor=[("disabled", DISABLED), ("active", "#d3e4f6")],
-              foreground=[("disabled", MUTED)])
-        s.configure("Accent.TButton", padding=(14, 7), background=ACCENT,
-                    foreground="white", font=(UI_FONT, 10, "bold"), bordercolor=ACCENT,
-                    lightcolor=ACCENT, darkcolor=ACCENT)
-        s.map("Accent.TButton",
-              background=[("disabled", DISABLED), ("active", ACCENT_ACTIVE)],
-              bordercolor=[("disabled", DISABLED), ("active", ACCENT_ACTIVE)],
-              lightcolor=[("disabled", DISABLED), ("active", ACCENT_ACTIVE)],
-              darkcolor=[("disabled", DISABLED), ("active", ACCENT_ACTIVE)],
-              foreground=[("disabled", MUTED)])
+        self._round_widgets(s)
         s.configure("Vertical.TScrollbar", background=BORDER, arrowcolor=INK, troughcolor=BG,
                     bordercolor=BG, lightcolor=BORDER, darkcolor=BORDER)
 
+    def _round_widgets(self, s):
+        """Give the input fields and buttons rounded edges, drawn as stretchable images."""
+        radius = round(5 * self.dpi / 96)
+        size = 2 * radius + 6
+        self._round_images = []
+
+        def image(fill, border, corner):
+            photo = ImageTk.PhotoImage(rounded_image(size, size, radius, fill, border, corner),
+                                       master=self)
+            self._round_images.append(photo)
+            return photo
+
+        s.element_create("Rounded.field", "image", image(FIELD, BORDER, CARD),
+                         ("disabled", image(DISABLED, BORDER, CARD)),
+                         ("focus", image(FIELD, ACCENT, CARD)),
+                         border=radius + 2, sticky="nsew", padding=(4, 2))
+        field = lambda children: [("Rounded.field", {"sticky": "nsew", "children": children})]
+        area = lambda widget: (f"{widget}.padding", {"expand": "1", "sticky": "nsew", "children": [
+            (f"{widget}.textarea", {"sticky": "nsew"})]})
+        s.layout("TEntry", field([area("Entry")]))
+        s.layout("TCombobox", field([("Combobox.downarrow", {"side": "right", "sticky": "ns"}),
+                                     area("Combobox")]))
+        s.layout("TSpinbox", field([
+            ("null", {"side": "right", "sticky": "", "children": [
+                ("Spinbox.uparrow", {"side": "top", "sticky": "e"}),
+                ("Spinbox.downarrow", {"side": "bottom", "sticky": "e"})]}),
+            area("Spinbox")]))
+        for widget in ("TEntry", "TCombobox", "TSpinbox"):
+            # The rounded image is the border now, so nothing else should draw one
+            s.configure(widget, bordercolor=FIELD)
+            s.map(widget, bordercolor=[], lightcolor=[], darkcolor=[])
+
+        def button(style, fill, active, corner, **options):
+            element = f"Rounded{style.replace('.', '')}.bg"
+            s.element_create(element, "image", image(fill, BORDER if fill == CARD else fill, corner),
+                             ("disabled", image(DISABLED, DISABLED, corner)),
+                             ("active", image(active, BORDER if fill == CARD else active, corner)),
+                             border=radius + 2, padding=0, sticky="nsew")
+            s.layout(style, [(element, {"sticky": "nsew", "children": [
+                ("Button.padding", {"sticky": "nsew", "children": [
+                    ("Button.label", {"sticky": ""})]})]})])
+            s.configure(style, **options)
+            s.map(style, foreground=[("disabled", MUTED)])
+
+        hover = "#d3e4f6"
+        button("TButton", CARD, hover, BG, padding=(10, 6), foreground=INK)
+        button("Accent.TButton", ACCENT, ACCENT_ACTIVE, BG, padding=(14, 7), foreground="white",
+               font=(UI_FONT, 10, "bold"))
+        button("Card.TButton", CARD, hover, CARD, padding=(8, 1), foreground=INK)
+
     def _card(self, parent, title=None, **pack):
-        """A white bordered panel; returns the frame to put its contents in."""
-        outer = tk.Frame(parent, background=CARD, highlightthickness=1,
-                         highlightbackground=BORDER)
+        """A rounded bordered panel; returns the frame to put its contents in."""
+        outer = tk.Frame(parent, background=BG)
         outer.pack(**{"fill": tk.X, "pady": (0, 6), **pack})
-        inner = ttk.Frame(outer, padding=(10, 8))
-        inner.pack(fill=tk.BOTH, expand=True)
+        # The panel is an image behind the contents, redrawn to fit whenever it resizes
+        backdrop = tk.Label(outer, background=BG, borderwidth=0)
+        backdrop.place(x=0, y=0, relwidth=1, relheight=1)
+
+        def redraw(event):
+            photo = ImageTk.PhotoImage(rounded_image(event.width, event.height, CARD_RADIUS, CARD,
+                                                     BORDER, BG), master=self)
+            backdrop.configure(image=photo)
+            backdrop.image = photo
+
+        outer.bind("<Configure>", redraw)
+        inner = ttk.Frame(outer, padding=(7, 5))
+        inner.pack(fill=tk.BOTH, expand=True, padx=CARD_INSET, pady=CARD_INSET)
         if title:
             ttk.Label(inner, text=title, style="Heading.TLabel").pack(anchor="w", pady=(0, 6))
         return inner
@@ -975,11 +1055,7 @@ class TRPLApp(tk.Tk):
         self.side_canvas.bind("<Configure>", lambda e: self._update_scrollbar())
         self.bind_all("<MouseWheel>", self._on_wheel)
 
-        card = self._card(panel, "Model")
-        combo = ttk.Combobox(card, textvariable=self.model_var, state="readonly",
-                             values=list(MODELS))
-        combo.pack(fill=tk.X)
-        combo.bind("<<ComboboxSelected>>", lambda e: self._show_params())
+        self._build_model_card(panel)
 
         card = self._card(panel, "Initial carrier densities")
         ttk.Entry(card, textvariable=self.n0_var).pack(fill=tk.X)
@@ -987,8 +1063,7 @@ class TRPLApp(tk.Tk):
                   style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
 
         card = self._card(panel, "Processes and parameters")
-        ttk.Label(card, text="Untick to set to zero and remove from the schematic",
-                  style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+        ttk.Label(card, text=self.PARAM_HINT, style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
         self.param_frame = ttk.Frame(card)
         self.param_frame.pack(fill=tk.X)
 
@@ -1020,6 +1095,13 @@ class TRPLApp(tk.Tk):
                         command=self._plot).grid(row=1, column=2, sticky="w", padx=(8, 0))
 
         self.bind("<Return>", lambda e: self._run())
+
+    def _build_model_card(self, panel):
+        card = self._card(panel, "Model")
+        combo = ttk.Combobox(card, textvariable=self.model_var, state="readonly",
+                             values=list(MODELS))
+        combo.pack(fill=tk.X)
+        combo.bind("<<ComboboxSelected>>", lambda e: self._show_params())
 
     def _fit_sidebar(self, event):
         """Size the sidebar to its contents."""
@@ -1246,8 +1328,7 @@ class TRPLApp(tk.Tk):
         self._show_params()
 
     # ------------------------------------------------------------ simulation
-    def _read_inputs(self):
-        model = self.model_var.get()
+    def _read_params(self, model):
         params = {}
         for name, *_ in MODELS[model]["params"]:
             on, val = self.param_state[model][name]
@@ -1258,6 +1339,11 @@ class TRPLApp(tk.Tk):
                     raise ValueError(f"Parameter {name}: '{val.get()}' is not a number")
             else:
                 params[name] = 0.0
+        return params
+
+    def _read_inputs(self):
+        model = self.model_var.get()
+        params = self._read_params(model)
 
         try:
             n0s = [float(s) for s in re.split(r"[,;\s]+", self.n0_var.get().strip()) if s]
@@ -1357,8 +1443,9 @@ class TRPLApp(tk.Tk):
             ax.clear()
 
         dots = dict(linestyle="none", marker="o", markersize=3, markeredgewidth=0)
-        if self.results:
-            model, results = self.results
+        # A curve with no valid PL is all NaN, which a log axis cannot autoscale
+        results = [r for r in self.results[1] if r["ok"]] if self.results else []
+        if results:
             n_dots = self._n_dots()
             for i, r in enumerate(results):
                 c = fader(i, len(results))
@@ -1371,7 +1458,8 @@ class TRPLApp(tk.Tk):
             ax_pl.legend(title=r"$\Delta n_0$ (cm⁻³)", loc="lower left", markerscale=1.8,
                          handletextpad=0.1, labelspacing=0.35)
         else:
-            ax_tau.text(0.5, 0.5, "Press Simulate to run the model", color=MUTED,
+            message = "No valid PL to plot" if self.results else "Press Simulate to run the model"
+            ax_tau.text(0.5, 0.5, message, color=MUTED,
                         ha="center", va="center", transform=ax_tau.transAxes)
 
         ax_pl.set_xscale(self.xscale_var.get())

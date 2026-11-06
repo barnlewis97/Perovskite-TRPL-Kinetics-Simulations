@@ -116,6 +116,8 @@ There is a simulation notebook for each of the `ABC`, `BTD`, `DT`, `DTShallowVar
 
 ## Interactive GUI
 
+**See [GUI_GUIDE.md](GUI_GUIDE.md) for full installation steps, instructions, theory, limitations and troubleshooting.**
+
 `TRPL_GUI.py` simulates any of the models (`ABC`, `BTD`, `DT`, `DTShallowVar`, `DTDeepVar`, `ShallowTrapVar`, `Full Model - 1 Trap`, `Full Model - 2 Traps`) from a Tkinter window. Both full models are solved with `FullREM_Model`, the 1-trap version by setting the second trap's density to zero:
 
 ```bash
@@ -136,6 +138,21 @@ python TRPL_GUI.py
 
 The first simulation with each model takes a few seconds while JAX compiles it.
 
+### Building a model from its processes
+
+`TRPL_GUI_Selective.py` has the same plots, schematic, symbol key and export, but builds the model from individual processes instead of offering a fixed list. It needs `TRPL_GUI.py` alongside it:
+
+```bash
+python TRPL_GUI_Selective.py
+```
+
+It starts with one trap. **Add Trap** adds as many more as you like and **Remove trap** deletes one, though too many can cause numerical instability and make the simulation crash. Trap subscripts are EC electron capture, EE electron emission, HC hole capture and HE hole emission. There are two tabs:
+
+- **Manual**: tick processes and set every rate independently. A trap with no density ticked cannot saturate and captures at a first-order rate. The drop-down loads any fixed model as a starting point. `BTD`, `DTShallowVar`, `DTDeepVar` and both full models are reproduced with the same equations, and `ABC` with k_A = C/2. `DT` and `ShallowTrapVar` are only approximate, because those models treat p₀ and the PL or Auger terms differently; the module docstring gives the details.
+- **SRH (detailed balance)**: set each trap's depth, capture coefficients and density. The emission rates and n_i follow from detailed balance, and the decay starts from thermal equilibrium found from charge neutrality, following [Heumann et al., arXiv:2609.18438](https://arxiv.org/abs/2609.18438) (Eqs. 4–9 and 20–23). The default material values (E_g = 1.625 eV, T = 300 K, N_C = N_V = 2.2×10¹⁸ cm⁻³) and first trap are from that work. Change them to suit your material. Setting n_i by hand is allowed, but detailed balance with the traps is then no longer exact.
+
+Each new number of traps compiles once, taking a few seconds.
+
 ---
 
 ## Installation
@@ -151,7 +168,12 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 jupyter notebook                 # then open any of the simulation notebooks
+
+python TRPL_GUI.py               # or start a GUI
+python TRPL_GUI_Selective.py
 ```
+
+Alternatively, `conda env create -f HMC_env.yml` followed by `conda activate MCMC_env` creates the exact conda environment. The GUIs also need Tkinter, which comes with the python.org and Anaconda installers; on Debian or Ubuntu, run `sudo apt install python3-tk`.
 
 `requirements.txt` pins the package versions used for the thesis simulations. For GPU acceleration, install the matching CUDA `jaxlib` wheel afterwards (see the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html)).
 
@@ -163,6 +185,7 @@ jupyter notebook                 # then open any of the simulation notebooks
 | `diffrax` | JAX-native ODE solver (Kvaerno5 stiff solver used throughout) |
 | `equinox` | JAX neural network / filter utilities |
 | `numpy` | Standard numerical routines |
+| `scipy` | Fermi-level root finding in the SRH model builder |
 | `matplotlib` | Plotting |
 | `jupyter` | Running the notebooks |
 
