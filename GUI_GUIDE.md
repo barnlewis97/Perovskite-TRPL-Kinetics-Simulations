@@ -64,11 +64,19 @@ These steps are the same in both programs.
 5. **Press Simulate** (or Enter). A new model or trap count takes a few seconds the first time, while JAX compiles it.
 6. **Read the three plots.**
    - **TRPL:** normalised PL against time. The Display card switches the time axis between log and linear.
-   - **Differential lifetime:** τ_diff against n_PL.
-   - **Differential coefficient:** k_diff against n_PL.
-7. **Adjust the display.** "Dots per curve" only thins what is drawn; the derivatives and the export always use the full time grid. The toolbar under the plots zooms, pans and saves figures.
+   - **Differential lifetime:** τ_diff against n_PL or time.
+   - **Differential coefficient:** k_diff against n_PL or time.
+7. **Adjust the display.** "τ_diff, k_diff against" switches both differential plots between n_PL and time. "Dots per curve" only thins what is drawn; the derivatives and the export always use the full time grid. The toolbar under the plots zooms, pans and saves figures.
 8. **Press the round i button** for a key to every symbol in the current model.
-9. **Press Export data…** to save the latest simulation as a `.npy` file in the format the HMC repository reads. Its shape is `(1 + n_decays, n_time)`, with time in ns in row 0, then one normalised decay per row from the highest initial density to the lowest.
+9. **Export the data.** Each quantity from the latest simulation has its own button and `.npy` file, on the full time grid, and the default name can be changed. All decays run from the highest initial density to the lowest.
+
+   | Button | Default file | Rows, for shape |
+   |--------|--------------|-----------------|
+   | TRPL | `SimTRPL_<model>.npy` | Time (ns), then normalised PL per decay: `(1 + n_decays, n_time)`. This is the format the HMC repository reads. |
+   | τ_diff | `SimTauDiff_<model>.npy` | Time (ns), then τ_diff (s) per decay, then n_PL (cm⁻³) per decay: `(1 + 2 n_decays, n_time)` |
+   | k_diff | `SimKDiff_<model>.npy` | Time (ns), then k_diff (cm³ s⁻¹) per decay, then n_PL (cm⁻³) per decay: `(1 + 2 n_decays, n_time)` |
+
+   The τ_diff and k_diff values are saved unfiltered, so they can include NaN, infinite or negative values where the numerical derivative is undefined or the PL rises. The plots leave these points out.
 
 ---
 

@@ -9,8 +9,9 @@ For a chosen model and any number of initial carrier densities, the GUI plots
     (c) the differential recombination coefficient
         k_diff = -1/(2 n_PL) dln(I_PL)/dt
 
-against the PL-derived carrier coordinate n_PL(t) = n_0 sqrt(I_PL(t) / I_PL(0)),
-following the definitions in paper_kdiff_BTD.pdf (Eq. S1).
+with (b) and (c) against either time or the PL-derived carrier coordinate
+n_PL(t) = n_0 sqrt(I_PL(t) / I_PL(0)), following the definitions in
+paper_kdiff_BTD.pdf (Eq. S1). Each quantity can be exported to its own file.
 
 Each parameter can be ticked off, in which case it is set to zero in the rate
 equations and its process disappears from the band-diagram schematic. Units follow
@@ -477,6 +478,26 @@ def export_array(results):
     return np.vstack([results[0]["t"]] + [r["pl"] for r in decays])
 
 
+def export_differential(results, quantity):
+    """
+    A differential quantity ("tau_diff" or "k_diff") with its axes, shape (1 + 2 n_decays, n_time).
+
+    Row 0 is the time axis (ns), then one row of the quantity per decay from the highest
+    initial carrier density to the lowest, then each decay's n_PL (cm^-3) in the same order.
+    """
+    decays = sorted(results, key=lambda r: r["n0"], reverse=True)
+    return np.vstack([results[0]["t"]] + [r[quantity] for r in decays]
+                     + [r["n_pl"] for r in decays])
+
+
+# Each export is (button label, default file name prefix, description in the save dialog)
+EXPORTS = {
+    "pl": ("TRPL", "SimTRPL", "simulated TRPL"),
+    "tau_diff": ("τ_diff", "SimTauDiff", "differential lifetime"),
+    "k_diff": ("k_diff", "SimKDiff", "differential recombination coefficient"),
+}
+
+
 def fader(i, n):
     """Red→blue colour sequence matching the simulation notebooks."""
     return gf.colorFader("red", "blue", factor=i / max(n - 1, 1))
@@ -850,6 +871,7 @@ class TRPLApp(tk.Tk):
         self.npts_var = tk.StringVar(value="1000")
         self.bkg_var = tk.StringVar(value="0")
         self.xscale_var = tk.StringVar(value="log")
+        self.diff_axis_var = tk.StringVar(value="n_pl")
         self.dots_var = tk.StringVar(value=str(DEFAULT_DOTS))
         self.status_var = tk.StringVar(value="Ready.")
 
@@ -1034,9 +1056,16 @@ class TRPLApp(tk.Tk):
         self.run_btn.pack(side=tk.LEFT)
         ttk.Button(btns, text="Reset parameters", command=self._reset_params).pack(
             side=tk.LEFT, padx=6)
-        self.export_btn = ttk.Button(btns, text="Export data…", command=self._export)
-        self.export_btn.state(["disabled"])
-        self.export_btn.pack(side=tk.LEFT)
+        exports = ttk.Frame(footer, style="Side.TFrame")
+        exports.pack(fill=tk.X, pady=(6, 0))
+        ttk.Label(exports, text="Export data", style="Status.TLabel").pack(side=tk.LEFT, padx=(0, 8))
+        self.export_btns = []
+        for quantity, (label, *_) in EXPORTS.items():
+            button = ttk.Button(exports, text=f"{label}…",
+                                command=lambda q=quantity: self._export(q))
+            button.state(["disabled"])
+            button.pack(side=tk.LEFT, padx=(0, 6))
+            self.export_btns.append(button)
         self.status_label = ttk.Label(footer, textvariable=self.status_var,
                                       style="Status.TLabel")
         self.status_label.pack(anchor="w", pady=(6, 0))
@@ -1093,6 +1122,12 @@ class TRPLApp(tk.Tk):
                         command=self._plot).grid(row=1, column=1, sticky="w")
         ttk.Radiobutton(grid, text="linear", variable=self.xscale_var, value="linear",
                         command=self._plot).grid(row=1, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(grid, text="τ_diff, k_diff against").grid(row=2, column=0, sticky="w",
+                                                            padx=(0, 12), pady=2)
+        ttk.Radiobutton(grid, text="n_PL", variable=self.diff_axis_var, value="n_pl",
+                        command=self._plot).grid(row=2, column=1, sticky="w")
+        ttk.Radiobutton(grid, text="time", variable=self.diff_axis_var, value="t",
+                        command=self._plot).grid(row=2, column=2, sticky="w", padx=(8, 0))
 
         self.bind("<Return>", lambda e: self._run())
 
@@ -1394,8 +1429,9 @@ class TRPLApp(tk.Tk):
             messagebox.showerror("Simulation failed", repr(payload))
             return
         self.results = (model, payload)
-        self.export_btn.state(["!disabled"])
-        bad = [r["n0"] for r in payload if not r["ok"]]
+        for button in self.export_btns:
+            button.state(["!disabled"])
+        bad =[r["n0"] for r in payload if not r["ok"]]
         if bad:
             self.status_var.set(
                 f"{model}: no valid PL for Δn₀ = {', '.join(f'{b:.1e}' for b in bad)} "
@@ -1404,23 +1440,25 @@ class TRPLApp(tk.Tk):
             self.status_var.set(f"{model}: simulated {len(payload)} densities.")
         self._plot()
 
-    def _export(self):
-        """Save the latest simulation on its full time grid."""
+    def _export(self, quantity):
+        """Save one quantity from the latest simulation on its full time grid."""
         model, results = self.results
+        _, prefix, description = EXPORTS[quantity]
         path = filedialog.asksaveasfilename(
-            title="Export simulated TRPL", defaultextension=".npy",
-            initialfile=f"SimTRPL_{model}.npy",
+            title=f"Export {description}", defaultextension=".npy",
+            initialfile=f"{prefix}_{model}.npy",
             filetypes=[("NumPy data", "*.npy"), ("All files", "*.*")])
         if not path:
             return
-        data = export_array(results)
+        data = (export_array(results) if quantity == "pl"
+                else export_differential(results, quantity))
         try:
             np.save(path, data)
         except OSError as err:
             messagebox.showerror("Export failed", str(err))
             return
         status = f"Saved {os.path.basename(path)}, shape {data.shape}."
-        if np.isnan(data).any():
+        if quantity == "pl" and np.isnan(data).any():
             status += (" It contains NaNs where a decay fell below solver precision, "
                        "which the HMC scripts reject; reduce the max time to avoid them.")
         self.status_var.set(status)
@@ -1443,6 +1481,7 @@ class TRPLApp(tk.Tk):
             ax.clear()
 
         dots = dict(linestyle="none", marker="o", markersize=3, markeredgewidth=0)
+        against_time = self.diff_axis_var.get() == "t"
         # A curve with no valid PL is all NaN, which a log axis cannot autoscale
         results = [r for r in self.results[1] if r["ok"]] if self.results else []
         if results:
@@ -1452,9 +1491,10 @@ class TRPLApp(tk.Tk):
                 idx = dot_indices(len(r["t"]), n_dots)
                 t, pl, n_pl = r["t"][idx], r["pl"][idx], r["n_pl"][idx]
                 ax_pl.plot(t, pl, color=c, label=sci_label(r["n0"]), **dots)
+                x = t if against_time else n_pl
                 for ax, y in ((ax_tau, r["tau_diff"][idx]), (ax_k, r["k_diff"][idx])):
-                    mask = np.isfinite(y) & (y > 0) & (n_pl > 0)
-                    ax.plot(n_pl[mask], y[mask], color=c, **dots)
+                    mask = np.isfinite(y) & (y > 0) & (n_pl > 0) & (x > 0)
+                    ax.plot(x[mask], y[mask], color=c, **dots)
             ax_pl.legend(title=r"$\Delta n_0$ (cm⁻³)", loc="lower left", markerscale=1.8,
                          handletextpad=0.1, labelspacing=0.35)
         else:
@@ -1468,14 +1508,14 @@ class TRPLApp(tk.Tk):
             ax.set_xscale("log")
             ax.set_yscale("log")
 
-        n_label = r"$n_{\mathrm{PL}}$ (cm⁻³)"
+        diff_label = "Time (ns)" if against_time else r"$n_{\mathrm{PL}}$ (cm⁻³)"
         ax_pl.set_xlabel("Time (ns)")
         ax_pl.set_ylabel("Normalised PL (a.u.)")
         ax_pl.set_title("TRPL")
-        ax_tau.set_xlabel(n_label)
+        ax_tau.set_xlabel(diff_label)
         ax_tau.set_ylabel(r"$\tau_{\mathrm{diff}}$ (s)")
         ax_tau.set_title("Differential lifetime")
-        ax_k.set_xlabel(n_label)
+        ax_k.set_xlabel(diff_label)
         ax_k.set_ylabel(r"$k_{\mathrm{diff}}$ (cm³ s⁻¹)")
         ax_k.set_title("Differential coefficient")
         for ax in self.axes:

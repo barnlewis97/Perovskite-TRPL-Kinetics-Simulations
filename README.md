@@ -129,12 +129,14 @@ python TRPL_GUI.py
 - Edit the parameter values (cm⁻³ and ns units, as in `globalfit_functions.py`). Unticking a parameter sets it to zero in the rate equations and removes its process from the schematic. Symbols follow the BTD notation in every model (k_T trapping, k_DT de-trapping, k_DP depopulation, k_HE hole emission, k_B bimolecular, k_A Auger, N_T trap density, with 1 for the shallow and 2 for the deep trap), except the ABC model, which uses A, B and C. Carrier densities are written Δn and Δp; in the BTD model p = Δp + p₀ is the total hole density. The argument names in `globalfit_functions.py` are unchanged.
 - Three plots are produced:
   - the normalised TRPL, with a log-log / lin-log toggle for the time axis
-  - τ_diff = (−½ d ln I_PL/dt)⁻¹ against the PL-derived carrier density n_PL = Δn₀ √(I_PL/I_PL(0)) (log-log)
-  - k_diff = −(1/2n_PL) d ln I_PL/dt against n_PL (log-log)
+  - τ_diff = (−½ d ln I_PL/dt)⁻¹ against the PL-derived carrier density n_PL = Δn₀ √(I_PL/I_PL(0)) or time (log-log, switched in the Display card)
+  - k_diff = −(1/2n_PL) d ln I_PL/dt against n_PL or time (log-log, same switch)
 
   These are the definitions in the k_diff/BTD paper (Eq. S1). An optional background is added to the normalised PL before the transformations.
 - Curves are drawn as dots. "Dots per curve" only thins what is plotted; the derivatives and the export always use the full time grid.
-- **Export data** saves the latest simulation as `SimTRPL_<model>.npy` (the name can be changed), in the format the HMC repository reads: shape `(1 + n_decays, n_time)`, with the time axis in ns in row 0 and one normalised decay per row from the highest initial carrier density to the lowest.
+- **Export data** has a button for each quantity, and each default name can be changed:
+  - **TRPL** saves `SimTRPL_<model>.npy`, in the format the HMC repository reads: shape `(1 + n_decays, n_time)`, with the time axis in ns in row 0 and one normalised decay per row from the highest initial carrier density to the lowest.
+  - **τ_diff** saves `SimTauDiff_<model>.npy` (in s) and **k_diff** saves `SimKDiff_<model>.npy` (in cm³ s⁻¹). Both have shape `(1 + 2 n_decays, n_time)`: time in ns in row 0, then the quantity for each decay from the highest density to the lowest, then each decay's n_PL in cm⁻³ in the same order.
 
 The first simulation with each model takes a few seconds while JAX compiles it.
 
