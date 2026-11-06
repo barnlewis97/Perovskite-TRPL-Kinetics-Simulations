@@ -252,7 +252,7 @@ MANUAL_NI_WARNING = "Set by hand: breaks detailed balance"
 def manual_trap_params(i):
     return [
         (f"k_EC{i}", 1e-17, BIMOL, "Electron capture", base.k(f"EC{i}")),
-        (f"k_EC{i}_f", 1e-2, RATE, "Electron capture × N_T (pseudo-first order)", base.k(f"EC{i}")),
+        (f"k_EC{i}_f", 1e-2, RATE, "Electron capture", base.k(f"EC{i}")),
         (f"k_EE{i}", 1e-3, RATE, "Electron emission", base.k(f"EE{i}")),
         (f"k_HC{i}", 1e-19, BIMOL, "Hole capture", base.k(f"HC{i}")),
         (f"k_HE{i}", 1e-23, RATE, "Hole emission", base.k(f"HE{i}")),
